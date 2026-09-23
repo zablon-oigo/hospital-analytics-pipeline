@@ -1,0 +1,147 @@
+services:
+
+  kafka:
+      image: apache/kafka:4.0.0
+      container_name: kafka
+      hostname: kafka
+
+      networks:
+        demo-net:
+
+      ports:
+        - "9092:9092"
+        - "29092:29092"
+
+      environment:
+        KAFKA_NODE_ID: 1
+        KAFKA_PROCESS_ROLES: broker,controller
+        KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+        KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+
+        KAFKA_ADVERTISED_LISTENERS: >-
+          PLAINTEXT://kafka:9092,
+          PLAINTEXT_HOST://localhost:29092
+
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
+          CONTROLLER:PLAINTEXT,
+          PLAINTEXT:PLAINTEXT,
+          PLAINTEXT_HOST:PLAINTEXT
+
+        KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+        KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+        KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+        KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+        KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      volumes:
+        - kafka-data:/var/lib/kafka/data
+
+
+  akhq:
+    image: tchiotludo/akhq:0.25.0
+    container_name: akhq
+    hostname: akhq
+
+    depends_on:
+      - kafka
+
+    networks:
+      demo-net:
+    ports:
+      - "8087:8080"
+
+    environment:
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            local-kafka:
+              properties:
+                bootstrap.servers: "kafka:9092"
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+
+    depends_on:
+      - kafka
+
+    networks:
+      demo-net:
+
+    entrypoint: ["/bin/bash", "-c"]
+
+    command:
+      - >
+        sleep 15 &&
+        kafka-topics
+        --create
+        --if-not-exists
+        --topic patient
+        --bootstrap-server kafka:9092
+        --partitions 1
+        --replication-factor 1 &&
+        kafka-topics
+        --describe
+        --topic patient
+        --bootstrap-server kafka:9092
+
+    restart: "no"
+
+
+  postgres-patient:
+      image: postgres:16
+      container_name: postgres-patient
+      environment:
+        POSTGRES_DB: patientdb
+        POSTGRES_USER: patient
+        POSTGRES_PASSWORD: patient
+      ports:
+        - "5434:5432"
+      networks:
+        - demo-net
+      volumes:
+        - patient_data:/var/lib/postgresql/data
+
+
+  postgres-billing:
+      image: postgres:16
+      container_name: postgres-billing
+      environment:
+        POSTGRES_DB: billingdb
+        POSTGRES_USER: billing
+        POSTGRES_PASSWORD: billing
+      ports:
+        - "5435:5432"
+      networks:
+        - demo-net
+      volumes:
+        - billing_data:/var/lib/postgresql/data
+
+
+  postgres-auth:
+      image: postgres:16
+      container_name: postgres-auth
+      environment:
+        POSTGRES_DB: authdb
+        POSTGRES_USER: auth
+        POSTGRES_PASSWORD: auth
+      ports:
+        - "5438:5432"
+      networks:
+        - demo-net
+      volumes:
+        - auth_data:/var/lib/postgresql/data
+
+
+networks:
+  demo-net:
+
+
+
+volumes:
+  kafka-data:
+  auth_data:
+  billing_data:
+  patient_data:
